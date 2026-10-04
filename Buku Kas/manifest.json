@@ -1,0 +1,48 @@
+{
+  "id": "/buku-kas",
+  "name": "Buku Kas - Kelas 1 Makkah",
+  "short_name": "Buku Kas",
+  "description": "Aplikasi pencatatan kas kelas modern Kelas 1 Makkah SDIT AL-HAMRA.",
+  "start_url": "/buku-kas.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FFFFFF",
+  "theme_color": "#2563EB",
+  "categories": ["finance", "education", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Catat Transaksi",
+      "short_name": "Catat",
+      "description": "Buka pencatatan kas baru",
+      "url": "/buku-kas.html?action=tambah",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -1,0 +1,2233 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Buku Kas — Kelas 1 Makkah SDIT AL-HAMRA</title>
+  <meta name="theme-color" content="#2563EB" />
+  <meta name="description" content="Aplikasi pencatatan kas kelas modern Kelas 1 Makkah SDIT AL-HAMRA." />
+  
+  <!-- PWA Manifest & App Icons -->
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  
+  <!-- Apple Mobile Web App (iOS Safari) -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Buku Kas" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              DEFAULT: '#2563EB',
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          },
+          boxShadow: {
+            'subtle': '0 2px 8px -2px rgba(0, 0, 0, 0.05), 0 1px 4px -1px rgba(0, 0, 0, 0.03)',
+            'subtle-lg': '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- React 18 & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel Standalone untuk JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- jsPDF & jspdf-autotable UMD -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f8fafc;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fadeIn 0.2s ease-out forwards;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen selection:bg-blue-100 selection:text-blue-700 pb-20 sm:pb-10">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // ================= FORMATTERS =================
+    const formatRupiah = (value) => {
+      const number = Number(value) || 0;
+      return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(number);
+    };
+
+    const formatAngkaRibuan = (value) => {
+      const cleanNumber = String(value).replace(/[^0-9]/g, '');
+      if (!cleanNumber) return '';
+      return new Intl.NumberFormat('id-ID').format(Number(cleanNumber));
+    };
+
+    const parseNominal = (value) => {
+      if (typeof value === 'number') return value;
+      const cleaned = String(value).replace(/[^0-9]/g, '');
+      return cleaned ? parseInt(cleaned, 10) : 0;
+    };
+
+    const DAFTAR_BULAN = [
+      { value: '1', label: 'Januari' },
+      { value: '2', label: 'Februari' },
+      { value: '3', label: 'Maret' },
+      { value: '4', label: 'April' },
+      { value: '5', label: 'Mei' },
+      { value: '6', label: 'Juni' },
+      { value: '7', label: 'Juli' },
+      { value: '8', label: 'Agustus' },
+      { value: '9', label: 'September' },
+      { value: '10', label: 'Oktober' },
+      { value: '11', label: 'November' },
+      { value: '12', label: 'Desember' },
+    ];
+
+    const getNamaBulan = (month) => {
+      const found = DAFTAR_BULAN.find((b) => b.value === String(month));
+      return found ? found.label : '';
+    };
+
+    const formatTanggal = (dateStr) => {
+      if (!dateStr) return '-';
+      try {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          const year = parts[0];
+          const monthIndex = parseInt(parts[1], 10);
+          const day = parts[2];
+          const monthName = getNamaBulan(monthIndex).substring(0, 3);
+          return `${day} ${monthName} ${year}`;
+        }
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+      } catch (err) {
+        return dateStr;
+      }
+    };
+
+    const STORAGE_KEY = 'buku_kas_makkah_v3';
+
+    // Transaksi Kas Kelas (September & Oktober 2026)
+    const INITIAL_TRANSACTIONS = [
+      // === TRANSAKSI BULAN OKTOBER 2026 ===
+      {
+        id: 'trx-okt-1',
+        tanggal: '2026-10-02',
+        keterangan: 'Iuran kas Oktober - Diwang',
+        jenis: 'pemasukan',
+        nominal: 20000,
+        keteranganTambahan: 'Lunas 1 Bulan (Okt)',
+      },
+      {
+        id: 'trx-okt-2',
+        tanggal: '2026-10-02',
+        keterangan: 'Iuran kas 3 bulan (Oktober - Desember) - Kavandra',
+        jenis: 'pemasukan',
+        nominal: 60000,
+        keteranganTambahan: 'Lunas 3 Bulan (Okt - Des)',
+      },
+      {
+        id: 'trx-okt-3',
+        tanggal: '2026-10-02',
+        keterangan: 'Iuran kas Oktober - Athalla',
+        jenis: 'pemasukan',
+        nominal: 20000,
+        keteranganTambahan: 'Lunas 1 Bulan (Okt)',
+      },
+      {
+        id: 'trx-okt-4',
+        tanggal: '2026-10-02',
+        keterangan: 'Iuran kas Oktober - Rayhan',
+        jenis: 'pemasukan',
+        nominal: 20000,
+        keteranganTambahan: 'Lunas 1 Bulan (Okt)',
+      },
+
+      // === TRANSAKSI BULAN SEPTEMBER 2026 ===
+      // PEMASUKAN (Total: Rp 782.000)
+      {
+        id: 'trx-sep-1',
+        tanggal: '2026-09-01',
+        keterangan: 'Sisa uang kas (Saldo awal)',
+        jenis: 'pemasukan',
+        nominal: 382000,
+        isSaldoAwal: true,
+        keteranganTambahan: 'Saldo Awal Kas',
+      },
+      {
+        id: 'trx-sep-2',
+        tanggal: '2026-09-05',
+        keterangan: '15x 20 (Iuran kas)',
+        jenis: 'pemasukan',
+        nominal: 300000,
+        keteranganTambahan: '15 Siswa',
+      },
+      {
+        id: 'trx-sep-3',
+        tanggal: '2026-09-08',
+        keterangan: 'Gavin 5 bulan (September - Januari)',
+        jenis: 'pemasukan',
+        nominal: 100000,
+        keteranganTambahan: 'Sept - Jan (5 Bln)',
+      },
+
+      // PENGELUARAN (Total: Rp 322.000)
+      {
+        id: 'trx-sep-4',
+        tanggal: '2026-09-10',
+        keterangan: 'Air galon',
+        jenis: 'pengeluaran',
+        nominal: 43000,
+        keteranganTambahan: 'Konsumsi Kelas',
+      },
+      {
+        id: 'trx-sep-5',
+        tanggal: '2026-09-12',
+        keterangan: 'Tisu',
+        jenis: 'pengeluaran',
+        nominal: 16000,
+        keteranganTambahan: 'Kebersihan',
+      },
+      {
+        id: 'trx-sep-6',
+        tanggal: '2026-09-15',
+        keterangan: 'Kekurangan patungan 17 Agustus',
+        jenis: 'pengeluaran',
+        nominal: 34000,
+        keteranganTambahan: 'Kegiatan HUT RI',
+      },
+      {
+        id: 'trx-sep-7',
+        tanggal: '2026-09-18',
+        keterangan: 'Air galon Juli',
+        jenis: 'pengeluaran',
+        nominal: 22000,
+        keteranganTambahan: 'Reimburse Juli',
+      },
+      {
+        id: 'trx-sep-8',
+        tanggal: '2026-09-22',
+        keterangan: 'Air galon',
+        jenis: 'pengeluaran',
+        nominal: 22000,
+        keteranganTambahan: 'Konsumsi Kelas',
+      },
+      {
+        id: 'trx-sep-9',
+        tanggal: '2026-09-26',
+        keterangan: 'Lain-lain',
+        jenis: 'pengeluaran',
+        nominal: 185000,
+        keteranganTambahan: 'Operasional Kelas',
+      },
+    ];
+
+    // ================= EKSPOR PDF RESMI (KOP + 2 TABEL + SALDO) =================
+    const eksporLaporanKasPDF = ({
+      transaksi = [],
+      semuaTransaksi = [],
+      bulan = 'all',
+      tahun = new Date().getFullYear(),
+      saldoBulanSebelumnya: paramSaldoSebelum,
+      totalPemasukan = 0,
+      totalPengeluaran = 0,
+      saldoAkhir = 0,
+    }) => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const marginX = 14;
+
+      const namaBulanStr = bulan && bulan !== 'all' ? getNamaBulan(bulan) : 'Semua Bulan';
+      const periodeText = `Periode: ${namaBulanStr} ${tahun}`;
+
+      // Helper cek apakah transaksi merupakan saldo awal
+      const isAwalKas = (t) =>
+        t.isSaldoAwal ||
+        (t.keterangan &&
+          (t.keterangan.toLowerCase().includes('saldo awal') ||
+            t.keterangan.toLowerCase().includes('sisa uang kas')));
+
+      // Hitung Saldo Bulan Sebelumnya jika bulan spesifik dipilih
+      const poolTransaksi = semuaTransaksi && semuaTransaksi.length > 0 ? semuaTransaksi : transaksi;
+      let saldoBulanSebelumnya = 0;
+      let namaBulanSebelumnya = '';
+
+      if (bulan && bulan !== 'all') {
+        const bulanInt = parseInt(bulan, 10);
+        const tahunInt = parseInt(tahun, 10);
+        let prevBulanInt = bulanInt - 1;
+        let prevTahunInt = tahunInt;
+        if (prevBulanInt < 1) {
+          prevBulanInt = 12;
+          prevTahunInt = tahunInt - 1;
+        }
+        namaBulanSebelumnya = `${getNamaBulan(prevBulanInt)} ${prevTahunInt}`;
+
+        if (paramSaldoSebelum !== undefined) {
+          saldoBulanSebelumnya = Number(paramSaldoSebelum) || 0;
+        } else {
+          const cutOffDate = new Date(tahunInt, bulanInt - 1, 1);
+          poolTransaksi.forEach((t) => {
+            if (!t.tanggal) return;
+            const tDate = new Date(t.tanggal);
+            if (tDate < cutOffDate) {
+              const nom = Number(t.nominal) || 0;
+              if (t.jenis === 'pemasukan') saldoBulanSebelumnya += nom;
+              else if (t.jenis === 'pengeluaran') saldoBulanSebelumnya -= nom;
+            }
+          });
+        }
+      }
+
+      // Pemasukan dan pengeluaran bulan berjalan
+      const dataPemasukan = transaksi
+        .filter((t) => t.jenis === 'pemasukan')
+        .sort((a, b) => {
+          if (isAwalKas(a) && !isAwalKas(b)) return -1;
+          if (!isAwalKas(a) && isAwalKas(b)) return 1;
+          return new Date(a.tanggal) - new Date(b.tanggal);
+        });
+
+      // Tabel pengeluaran HANYA berisi pengeluaran bulan berjalan (pengeluaran bulan sebelumnya tidak dimasukkan)
+      const dataPengeluaran = transaksi
+        .filter((t) => t.jenis === 'pengeluaran')
+        .sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal));
+
+      // 1. KOP LAPORAN
+      let startY = 16;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(71, 85, 105);
+      doc.text('SDIT AL-HAMRA', pageWidth / 2, startY, { align: 'center' });
+
+      startY += 7;
+      doc.setFontSize(16);
+      doc.setTextColor(15, 23, 42);
+      doc.text('LAPORAN KAS KELAS', pageWidth / 2, startY, { align: 'center' });
+
+      startY += 6;
+      doc.setFontSize(13);
+      doc.setTextColor(37, 99, 235); // DompetKu Blue #2563eb
+      doc.text('KELAS 1 MAKKAH', pageWidth / 2, startY, { align: 'center' });
+
+      startY += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      doc.text(periodeText, pageWidth / 2, startY, { align: 'center' });
+
+      // Garis Kop
+      startY += 4;
+      doc.setDrawColor(37, 99, 235);
+      doc.setLineWidth(0.8);
+      doc.line(marginX, startY, pageWidth - marginX, startY);
+
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.2);
+      doc.line(marginX, startY + 1, pageWidth - marginX, startY + 1);
+
+      startY += 8;
+
+      const todayStr = new Intl.DateTimeFormat('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).format(new Date());
+
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Waktu Cetak: ${todayStr}`, pageWidth - marginX, startY - 2, { align: 'right' });
+
+      // 2. TABEL PEMASUKAN
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(4, 120, 87);
+      doc.text('A. DAFTAR PEMASUKAN', marginX, startY);
+
+      startY += 3;
+
+      let bodyPemasukan = [];
+      let totalMasukFinal = 0;
+
+      if (saldoBulanSebelumnya > 0 && bulan !== 'all') {
+        const bulanInt = parseInt(bulan, 10);
+        const tglAwalBulan = `01/${String(bulanInt).padStart(2, '0')}/${tahun}`;
+
+        // Baris No. 1: Sisa saldo bulan sebelumnya DI-BLOCK WARNA ORANGE
+        const rowSaldoSebelumnya = [
+          {
+            content: 1,
+            styles: {
+              fillColor: [254, 215, 170], // Orange / Amber-200 block
+              textColor: [154, 52, 18],   // Amber-800 dark text
+              fontStyle: 'bold',
+              halign: 'center',
+            },
+          },
+          {
+            content: tglAwalBulan,
+            styles: {
+              fillColor: [254, 215, 170],
+              textColor: [154, 52, 18],
+              fontStyle: 'bold',
+              halign: 'center',
+            },
+          },
+          {
+            content: `Sisa Saldo Kas Bulan Sebelumnya (${namaBulanSebelumnya})`,
+            styles: {
+              fillColor: [254, 215, 170],
+              textColor: [154, 52, 18],
+              fontStyle: 'bold',
+            },
+          },
+          {
+            content: formatRupiah(saldoBulanSebelumnya),
+            styles: {
+              fillColor: [254, 215, 170],
+              textColor: [154, 52, 18],
+              fontStyle: 'bold',
+              halign: 'right',
+            },
+          },
+          {
+            content: 'Saldo Awal Kas',
+            styles: {
+              fillColor: [254, 215, 170],
+              textColor: [154, 52, 18],
+              fontStyle: 'bold',
+            },
+          },
+        ];
+
+        // Baris-baris pemasukan bulan berjalan di bawahnya
+        const rowsPemasukanBulanIni = dataPemasukan.map((item, idx) => [
+          idx + 2,
+          formatTanggal(item.tanggal),
+          item.keterangan || '-',
+          formatRupiah(item.nominal),
+          item.keteranganTambahan || '-',
+        ]);
+
+        bodyPemasukan = [rowSaldoSebelumnya, ...rowsPemasukanBulanIni];
+        totalMasukFinal =
+          saldoBulanSebelumnya +
+          dataPemasukan.reduce((acc, t) => acc + (Number(t.nominal) || 0), 0);
+      } else {
+        // Jika tidak ada saldo sebelumnya (misal bulan pertama September atau Semua Bulan)
+        if (dataPemasukan.length > 0) {
+          bodyPemasukan = dataPemasukan.map((item, idx) => {
+            const isFirstSaldoAwal = idx === 0 && isAwalKas(item);
+            if (isFirstSaldoAwal) {
+              return [
+                {
+                  content: idx + 1,
+                  styles: {
+                    fillColor: [254, 215, 170], // Orange block
+                    textColor: [154, 52, 18],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                  },
+                },
+                {
+                  content: formatTanggal(item.tanggal),
+                  styles: {
+                    fillColor: [254, 215, 170],
+                    textColor: [154, 52, 18],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                  },
+                },
+                {
+                  content: item.keterangan || '-',
+                  styles: {
+                    fillColor: [254, 215, 170],
+                    textColor: [154, 52, 18],
+                    fontStyle: 'bold',
+                  },
+                },
+                {
+                  content: formatRupiah(item.nominal),
+                  styles: {
+                    fillColor: [254, 215, 170],
+                    textColor: [154, 52, 18],
+                    fontStyle: 'bold',
+                    halign: 'right',
+                  },
+                },
+                {
+                  content: item.keteranganTambahan || 'Saldo Awal Kas',
+                  styles: {
+                    fillColor: [254, 215, 170],
+                    textColor: [154, 52, 18],
+                    fontStyle: 'bold',
+                  },
+                },
+              ];
+            }
+            return [
+              idx + 1,
+              formatTanggal(item.tanggal),
+              item.keterangan || '-',
+              formatRupiah(item.nominal),
+              item.keteranganTambahan || '-',
+            ];
+          });
+          totalMasukFinal = dataPemasukan.reduce(
+            (acc, t) => acc + (Number(t.nominal) || 0),
+            0
+          );
+        } else {
+          bodyPemasukan = [['-', '-', 'Tidak ada data pemasukan pada periode ini', 'Rp 0', '-']];
+          totalMasukFinal = 0;
+        }
+      }
+
+      doc.autoTable({
+        startY: startY,
+        head: [['No', 'Tanggal', 'Keterangan Transaksi', 'Nominal', 'Keterangan Tambahan']],
+        body: bodyPemasukan,
+        foot: [
+          [
+            {
+              content: 'Total Pemasukan',
+              colSpan: 3,
+              styles: { halign: 'right', fontStyle: 'bold' },
+            },
+            {
+              content: formatRupiah(totalMasukFinal),
+              styles: { halign: 'right', fontStyle: 'bold', textColor: [4, 120, 87] },
+            },
+            {
+              content: '',
+              styles: { halign: 'center' },
+            },
+          ],
+        ],
+        margin: { left: marginX, right: marginX },
+        theme: 'grid',
+        styles: {
+          fontSize: 9,
+          cellPadding: 2.5,
+          lineColor: [226, 232, 240],
+          lineWidth: 0.2,
+          textColor: [30, 41, 59],
+        },
+        headStyles: {
+          fillColor: [16, 185, 129],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        footStyles: {
+          fillColor: [236, 253, 245],
+          textColor: [4, 120, 87],
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 10 },
+          1: { halign: 'center', cellWidth: 24 },
+          2: { halign: 'left' },
+          3: { halign: 'right', cellWidth: 35 },
+          4: { halign: 'left', cellWidth: 45 },
+        },
+      });
+
+      let currentY = doc.lastAutoTable.finalY + 8;
+
+      if (currentY > pageHeight - 65) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      // 3. TABEL PENGELUARAN (Hanya pengeluaran bulan berjalan)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(220, 38, 38);
+      doc.text('B. DAFTAR PENGELUARAN', marginX, currentY);
+
+      currentY += 3;
+
+      const bodyPengeluaran =
+        dataPengeluaran.length > 0
+          ? dataPengeluaran.map((item, index) => [
+              index + 1,
+              formatTanggal(item.tanggal),
+              item.keterangan || '-',
+              formatRupiah(item.nominal),
+              item.keteranganTambahan || '-',
+            ])
+          : [['-', '-', 'Tidak ada data pengeluaran pada periode ini', 'Rp 0', '-']];
+
+      const totalKeluarFinal = dataPengeluaran.reduce(
+        (acc, t) => acc + (Number(t.nominal) || 0),
+        0
+      );
+
+      const saldoAkhirFinal = totalMasukFinal - totalKeluarFinal;
+
+      doc.autoTable({
+        startY: currentY,
+        head: [['No', 'Tanggal', 'Keterangan Transaksi', 'Nominal', 'Keterangan Tambahan']],
+        body: bodyPengeluaran,
+        foot: [
+          [
+            {
+              content: 'Total Pengeluaran',
+              colSpan: 3,
+              styles: { halign: 'right', fontStyle: 'bold' },
+            },
+            {
+              content: formatRupiah(totalKeluarFinal),
+              styles: { halign: 'right', fontStyle: 'bold', textColor: [220, 38, 38] },
+            },
+            {
+              content: '',
+              styles: { halign: 'center' },
+            },
+          ],
+        ],
+        margin: { left: marginX, right: marginX },
+        theme: 'grid',
+        styles: {
+          fontSize: 9,
+          cellPadding: 2.5,
+          lineColor: [226, 232, 240],
+          lineWidth: 0.2,
+          textColor: [30, 41, 59],
+        },
+        headStyles: {
+          fillColor: [239, 68, 68],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        footStyles: {
+          fillColor: [254, 242, 242],
+          textColor: [220, 38, 38],
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 10 },
+          1: { halign: 'center', cellWidth: 24 },
+          2: { halign: 'left' },
+          3: { halign: 'right', cellWidth: 35 },
+          4: { halign: 'left', cellWidth: 45 },
+        },
+      });
+
+      currentY = doc.lastAutoTable.finalY + 8;
+
+      if (currentY > pageHeight - 55) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      // 4. KOTAK KESIMPULAN
+      const boxWidth = pageWidth - marginX * 2;
+      const boxHeight = 22;
+
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(marginX, currentY, boxWidth, boxHeight, 2, 2, 'FD');
+
+      const colW = boxWidth / 3;
+
+      // Pemasukan
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('TOTAL PEMASUKAN', marginX + 6, currentY + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(4, 120, 87);
+      doc.text(formatRupiah(totalMasukFinal), marginX + 6, currentY + 14);
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(marginX + colW, currentY + 3, marginX + colW, currentY + boxHeight - 3);
+
+      // Pengeluaran
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('TOTAL PENGELUARAN', marginX + colW + 6, currentY + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(220, 38, 38);
+      doc.text(formatRupiah(totalKeluarFinal), marginX + colW + 6, currentY + 14);
+
+      doc.line(marginX + colW * 2, currentY + 3, marginX + colW * 2, currentY + boxHeight - 3);
+
+      // Saldo Akhir
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('SISA SALDO AKHIR', marginX + colW * 2 + 6, currentY + 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(saldoAkhirFinal >= 0 ? 15 : 220, saldoAkhirFinal >= 0 ? 23 : 38, saldoAkhirFinal >= 0 ? 42 : 38);
+      doc.text(formatRupiah(saldoAkhirFinal), marginX + colW * 2 + 6, currentY + 14);
+
+      currentY += boxHeight + 12;
+
+      if (currentY > pageHeight - 35) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      // 5. TANDA TANGAN
+      const ttdX = pageWidth - marginX - 55;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Mengetahui,', ttdX, currentY);
+      doc.text('Wali Kelas / Bendahara', ttdX, currentY + 5);
+      doc.setFont('helvetica', 'bold');
+      doc.text('( ......................................... )', ttdX, currentY + 24);
+
+      // 6. NOMOR HALAMAN
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          `Buku Kas Kelas 1 Makkah - SDIT AL-HAMRA  |  Halaman ${i} dari ${totalPages}`,
+          pageWidth / 2,
+          pageHeight - 8,
+          { align: 'center' }
+        );
+      }
+
+      const sanitizeBulan = namaBulanStr.replace(/\s+/g, '_');
+      const filename = `Laporan_Kas_Kelas_1_Makkah_${sanitizeBulan}_${tahun}.pdf`;
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      return { doc, filename, blobUrl, periodeText };
+    };
+
+    const THEME_ACCENTS = [
+      { id: 'blue', name: 'Biru', color: '#2563EB', gradient: 'from-blue-600 via-blue-600 to-indigo-700', btn: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20' },
+      { id: 'emerald', name: 'Hijau', color: '#059669', gradient: 'from-emerald-600 via-emerald-600 to-teal-700', btn: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20' },
+      { id: 'purple', name: 'Ungu', color: '#7C3AED', gradient: 'from-purple-600 via-violet-600 to-indigo-700', btn: 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-500/20' },
+      { id: 'orange', name: 'Oranye', color: '#EA580C', gradient: 'from-orange-600 via-amber-600 to-rose-600', btn: 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20' },
+    ];
+
+    // ================= KOMPONEN UTAMA (DOMPETKU STYLE) =================
+    function App() {
+      const [transaksi, setTransaksi] = useState(() => {
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) return JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
+        return INITIAL_TRANSACTIONS;
+      });
+
+      useEffect(() => {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(transaksi));
+        } catch (e) {
+          console.error(e);
+        }
+      }, [transaksi]);
+
+      // Bersihkan data lama v1 dan v2 jika ada
+      try {
+        localStorage.removeItem('buku_kas_makkah_v1');
+        localStorage.removeItem('buku_kas_makkah_v2');
+      } catch (e) {}
+
+      // State Mode Gelap / Terang
+      const [isDark, setIsDark] = useState(() => {
+        try {
+          return localStorage.getItem('buku_kas_theme') === 'dark';
+        } catch (e) {
+          return false;
+        }
+      });
+
+      // State Pilihan Aksen Warna
+      const [accent, setAccent] = useState(() => {
+        try {
+          return localStorage.getItem('buku_kas_accent') || 'blue';
+        } catch (e) {
+          return 'blue';
+        }
+      });
+      const [showAccentPicker, setShowAccentPicker] = useState(false);
+
+      useEffect(() => {
+        if (isDark) {
+          document.documentElement.classList.add('dark');
+          localStorage.setItem('buku_kas_theme', 'dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+          localStorage.setItem('buku_kas_theme', 'light');
+        }
+      }, [isDark]);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('buku_kas_accent', accent);
+        } catch (e) {}
+      }, [accent]);
+
+      const currentAccent = THEME_ACCENTS.find((a) => a.id === accent) || THEME_ACCENTS[0];
+
+      const currentMonth = '10'; // Default ke bulan Oktober
+      const currentYear = '2026';
+
+      const [selectedMonth, setSelectedMonth] = useState('10');
+      const [selectedYear, setSelectedYear] = useState('2026');
+      
+      // Modals
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [editingItem, setEditingItem] = useState(null);
+      const [itemToDelete, setItemToDelete] = useState(null);
+      const [pdfPreview, setPdfPreview] = useState(null);
+
+      // State PWA Install
+      const [deferredPrompt, setDeferredPrompt] = useState(null);
+      const [isInstalled, setIsInstalled] = useState(false);
+      const [showInstallGuide, setShowInstallGuide] = useState(false);
+      const [installTab, setInstallTab] = useState('android');
+      const [dismissInstallBanner, setDismissInstallBanner] = useState(() => {
+        try {
+          return localStorage.getItem('buku_kas_dismiss_install') === 'true';
+        } catch (e) {
+          return false;
+        }
+      });
+
+      useEffect(() => {
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+          setIsInstalled(true);
+        }
+
+        const handleBeforeInstallPrompt = (e) => {
+          e.preventDefault();
+          setDeferredPrompt(e);
+        };
+
+        const handleAppInstalled = () => {
+          setIsInstalled(true);
+          setDeferredPrompt(null);
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        window.addEventListener('appinstalled', handleAppInstalled);
+
+        return () => {
+          window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+          window.removeEventListener('appinstalled', handleAppInstalled);
+        };
+      }, []);
+
+      const handleTriggerInstall = async () => {
+        if (deferredPrompt) {
+          try {
+            deferredPrompt.prompt();
+            const choiceResult = await deferredPrompt.userChoice;
+            if (choiceResult && choiceResult.outcome === 'accepted') {
+              setDeferredPrompt(null);
+            }
+          } catch (err) {
+            console.error(err);
+            setShowInstallGuide(true);
+          }
+        } else {
+          setShowInstallGuide(true);
+        }
+      };
+
+      // Form State
+      const [tanggal, setTanggal] = useState(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      });
+      const [keterangan, setKeterangan] = useState('');
+      const [keteranganTambahan, setKeteranganTambahan] = useState('');
+      const [jenis, setJenis] = useState('pemasukan');
+      const [nominalDisplay, setNominalDisplay] = useState('');
+      const [errorMsg, setErrorMsg] = useState('');
+      const [isRefreshing, setIsRefreshing] = useState(false);
+
+      const handleRefreshApp = () => {
+        setIsRefreshing(true);
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (let registration of registrations) {
+              registration.update();
+            }
+          });
+        }
+        setTimeout(() => {
+          window.location.reload();
+        }, 250);
+      };
+
+      const availableYears = useMemo(() => {
+        const years = new Set([currentYear]);
+        transaksi.forEach((t) => {
+          if (t.tanggal) {
+            const y = t.tanggal.split('-')[0];
+            if (y) years.add(y);
+          }
+        });
+        return Array.from(years).sort((a, b) => b - a);
+      }, [transaksi, currentYear]);
+
+      const transaksiDifilter = useMemo(() => {
+        return transaksi.filter((t) => {
+          if (!t.tanggal) return false;
+          const [year, month] = t.tanggal.split('-');
+          const matchYear = String(year) === String(selectedYear);
+          const matchMonth = selectedMonth === 'all' || String(parseInt(month, 10)) === String(selectedMonth);
+          return matchYear && matchMonth;
+        });
+      }, [transaksi, selectedMonth, selectedYear]);
+
+      // Saldo bulan sebelumnya jika memilih bulan spesifik
+      const { saldoBulanSebelumnya, namaBulanSebelumnya } = useMemo(() => {
+        if (selectedMonth === 'all') {
+          return { saldoBulanSebelumnya: 0, namaBulanSebelumnya: '' };
+        }
+        const bulanInt = parseInt(selectedMonth, 10);
+        const tahunInt = parseInt(selectedYear, 10);
+        let prevBulanInt = bulanInt - 1;
+        let prevTahunInt = tahunInt;
+        if (prevBulanInt < 1) {
+          prevBulanInt = 12;
+          prevTahunInt = tahunInt - 1;
+        }
+        const namaBulanPrev = `${getNamaBulan(prevBulanInt)} ${prevTahunInt}`;
+
+        const cutOffDate = new Date(tahunInt, bulanInt - 1, 1);
+        let saldoSebelum = 0;
+        transaksi.forEach((t) => {
+          if (!t.tanggal) return;
+          const tDate = new Date(t.tanggal);
+          if (tDate < cutOffDate) {
+            const nom = Number(t.nominal) || 0;
+            if (t.jenis === 'pemasukan') saldoSebelum += nom;
+            else if (t.jenis === 'pengeluaran') saldoSebelum -= nom;
+          }
+        });
+        return {
+          saldoBulanSebelumnya: saldoSebelum,
+          namaBulanSebelumnya: namaBulanPrev,
+        };
+      }, [transaksi, selectedMonth, selectedYear]);
+
+      const { totalPemasukan, totalPengeluaran, saldoAkhir, pemasukanBulanIni } = useMemo(() => {
+        let masuk = 0;
+        let keluar = 0;
+        transaksiDifilter.forEach((t) => {
+          const nom = Number(t.nominal) || 0;
+          if (t.jenis === 'pemasukan') masuk += nom;
+          else if (t.jenis === 'pengeluaran') keluar += nom;
+        });
+        const totalMasuk = masuk + saldoBulanSebelumnya;
+        const totalKeluar = keluar;
+        return {
+          pemasukanBulanIni: masuk,
+          totalPemasukan: totalMasuk,
+          totalPengeluaran: totalKeluar,
+          saldoAkhir: totalMasuk - totalKeluar,
+        };
+      }, [transaksiDifilter, saldoBulanSebelumnya]);
+
+      const handleBukaTambah = () => {
+        setEditingItem(null);
+        const d = new Date();
+        setTanggal(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+        setKeterangan('');
+        setKeteranganTambahan('');
+        setJenis('pemasukan');
+        setNominalDisplay('');
+        setErrorMsg('');
+        setIsModalOpen(true);
+      };
+
+      const handleBukaEdit = (item) => {
+        setEditingItem(item);
+        setTanggal(item.tanggal || '');
+        setKeterangan(item.keterangan || '');
+        setKeteranganTambahan(item.keteranganTambahan && item.keteranganTambahan !== '-' ? item.keteranganTambahan : '');
+        setJenis(item.jenis || 'pemasukan');
+        setNominalDisplay(formatAngkaRibuan(item.nominal || 0));
+        setErrorMsg('');
+        setIsModalOpen(true);
+      };
+
+      const handleTutupModal = () => {
+        setIsModalOpen(false);
+        setEditingItem(null);
+        setErrorMsg('');
+      };
+
+      const handleSubmitTransaksi = (e) => {
+        e.preventDefault();
+        const nominalAngka = nominalDisplay.trim() === '' ? 0 : parseNominal(nominalDisplay);
+
+        if (!tanggal) {
+          setErrorMsg('Silakan pilih tanggal transaksi.');
+          return;
+        }
+        if (!keterangan.trim()) {
+          setErrorMsg('Keterangan transaksi wajib diisi.');
+          return;
+        }
+        if (isNaN(nominalAngka) || nominalAngka < 0) {
+          setErrorMsg('Nominal transaksi tidak valid.');
+          return;
+        }
+
+        if (editingItem) {
+          // Mode Edit Transaksi
+          setTransaksi((prev) =>
+            prev.map((t) =>
+              t.id === editingItem.id
+                ? {
+                    ...t,
+                    tanggal,
+                    keterangan: keterangan.trim(),
+                    keteranganTambahan: keteranganTambahan.trim() || '-',
+                    jenis,
+                    nominal: nominalAngka,
+                  }
+                : t
+            )
+          );
+        } else {
+          // Mode Tambah Transaksi Baru
+          const transaksiBaru = {
+            id: `trx-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            tanggal,
+            keterangan: keterangan.trim(),
+            keteranganTambahan: keteranganTambahan.trim() || '-',
+            jenis,
+            nominal: nominalAngka,
+          };
+          setTransaksi((prev) => [transaksiBaru, ...prev]);
+        }
+
+        // Sesuaikan filter jika tanggal transaksi di bulan/tahun lain
+        const [y, m] = tanggal.split('-');
+        setSelectedYear(y);
+        setSelectedMonth(String(parseInt(m, 10)));
+
+        setEditingItem(null);
+        setKeterangan('');
+        setKeteranganTambahan('');
+        setNominalDisplay('');
+        setErrorMsg('');
+        setIsModalOpen(false);
+      };
+
+      const handleHapus = (id) => {
+        setTransaksi((prev) => prev.filter((t) => t.id !== id));
+      };
+
+      const handleBukaPreviewPDF = () => {
+        if (pdfPreview && pdfPreview.blobUrl) {
+          URL.revokeObjectURL(pdfPreview.blobUrl);
+        }
+        const result = eksporLaporanKasPDF({
+          transaksi: transaksiDifilter,
+          semuaTransaksi: transaksi,
+          bulan: selectedMonth,
+          tahun: selectedYear,
+          saldoBulanSebelumnya,
+          totalPemasukan,
+          totalPengeluaran,
+          saldoAkhir,
+        });
+        setPdfPreview(result);
+      };
+
+      const handleTutupPreviewPDF = () => {
+        if (pdfPreview && pdfPreview.blobUrl) {
+          URL.revokeObjectURL(pdfPreview.blobUrl);
+        }
+        setPdfPreview(null);
+      };
+
+      const handleDownloadPDF = () => {
+        if (pdfPreview && pdfPreview.doc) {
+          pdfPreview.doc.save(pdfPreview.filename);
+        }
+      };
+
+      const filterLabel =
+        selectedMonth === 'all'
+          ? `Semua Bulan ${selectedYear}`
+          : `${getNamaBulan(selectedMonth)} ${selectedYear}`;
+
+      return (
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
+          
+          {/* ================= 1. HEADER ALA DOMPETKU ================= */}
+          <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-xs transition-colors">
+            <div className="max-w-4xl mx-auto px-2.5 sm:px-6 py-2 sm:py-3 flex items-center justify-between gap-1.5 sm:gap-3">
+              
+              {/* App Identity */}
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                <div
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center text-white shadow-md shrink-0 transition-colors"
+                  style={{ backgroundColor: currentAccent.color }}
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 12V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2v-5zm0 0h-4a2 2 0 00-2 2v0a2 2 0 002 2h4" />
+                  </svg>
+                </div>
+                <div className="min-w-0 pr-1">
+                  <h1 className="text-sm sm:text-lg font-bold text-slate-800 dark:text-slate-100 tracking-tight leading-tight truncate">
+                    Buku Kas
+                  </h1>
+                  <p className="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5 leading-tight break-normal sm:truncate">
+                    Kelas 1 Makkah - SDIT AL-HAMRA
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons Right: Refresh, Aksen Warna, Mode Gelap/Terang, dan Catat */}
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                
+                {/* Tombol Refresh Aplikasi */}
+                <button
+                  type="button"
+                  onClick={handleRefreshApp}
+                  className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
+                  title="Segarkan / Refresh Aplikasi"
+                >
+                  <svg
+                    className={`w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.2] ${isRefreshing ? 'animate-spin text-blue-600 dark:text-blue-400' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                    />
+                  </svg>
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+
+                {/* Pilihan Aksen Warna Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowAccentPicker(!showAccentPicker)}
+                    className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
+                    title="Pilih Aksen Warna"
+                  >
+                    <span className="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full shadow-xs shrink-0" style={{ backgroundColor: currentAccent.color }} />
+                    <span className="hidden sm:inline">Aksen</span>
+                  </button>
+
+                  {showAccentPicker && (
+                    <div className="absolute right-0 top-full mt-2 w-36 bg-white dark:bg-slate-800 rounded-2xl shadow-subtle-lg border border-slate-200 dark:border-slate-700 p-2 z-50 animate-fade-in">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 py-1">
+                        Pilih Aksen
+                      </div>
+                      <div className="space-y-1">
+                        {THEME_ACCENTS.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setAccent(item.id);
+                              setShowAccentPicker(false);
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                              accent === item.id
+                                ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white'
+                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                            }`}
+                          >
+                            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                            <span>{item.name}</span>
+                            {accent === item.id && <span className="ml-auto text-[10px]">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tombol Mode Gelap / Terang */}
+                <button
+                  type="button"
+                  onClick={() => setIsDark(!isDark)}
+                  className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 text-xs font-semibold transition active:scale-95 cursor-pointer inline-flex items-center gap-1.5"
+                  title={isDark ? 'Ganti ke Mode Terang' : 'Ganti ke Mode Gelap'}
+                >
+                  {isDark ? (
+                    <>
+                      <span className="text-amber-400 text-xs sm:text-sm leading-none">☀️</span>
+                      <span className="hidden sm:inline">Terang</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm leading-none">🌙</span>
+                      <span className="hidden sm:inline">Gelap</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Tombol Catat Transaksi */}
+                <button
+                  type="button"
+                  onClick={handleBukaTambah}
+                  className={`inline-flex items-center justify-center gap-1 sm:gap-1.5 p-1.5 sm:px-3.5 sm:py-2 rounded-lg sm:rounded-xl text-white text-xs font-bold shadow-md active:scale-95 transition cursor-pointer ${currentAccent.btn}`}
+                  title="Catat Transaksi"
+                >
+                  <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span className="hidden sm:inline">Catat</span>
+                </button>
+
+              </div>
+
+            </div>
+          </header>
+
+          {/* ================= 2. MAIN CONTAINER ================= */}
+          <main className="flex-1 max-w-4xl w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-6 pb-24 sm:pb-8 space-y-4 sm:space-y-5">
+            
+            {/* ================= HERO CARD (DENGAN AKSEN DINAMIS) ================= */}
+            <div className={`bg-gradient-to-br ${currentAccent.gradient} text-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-subtle-lg relative overflow-hidden transition-all duration-300`}>
+              {/* Background Shapes */}
+              <div className="absolute -right-8 -top-8 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -left-10 -bottom-10 w-36 h-36 bg-blue-400/20 rounded-full blur-xl pointer-events-none" />
+
+              <div className="relative z-10">
+                <div className="flex items-center justify-between gap-2 mb-1.5 sm:mb-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                    <span className="text-xs sm:text-sm font-medium text-blue-100/90 truncate">
+                      Saldo Kas Saat Ini
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white backdrop-blur-md border border-white/20 shrink-0">
+                      {filterLabel}
+                    </span>
+                  </div>
+                  {saldoAkhir < 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white shrink-0">
+                      Defisit
+                    </span>
+                  )}
+                </div>
+
+                {/* Big Balance Number */}
+                <div className="text-2xl sm:text-4xl font-extrabold tracking-tight mb-4 sm:mb-5">
+                  {formatRupiah(saldoAkhir)}
+                </div>
+
+                {/* Dual Glass Sub-Cards */}
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
+                  {/* Pemasukan Sub-Card */}
+                  <div className="bg-white/15 backdrop-blur-md rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/20 transition hover:bg-white/20 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
+                        <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md sm:rounded-lg bg-emerald-400/30 flex items-center justify-center text-emerald-200 shrink-0">
+                          <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                          </svg>
+                        </div>
+                        <span className="text-[11px] sm:text-xs text-blue-100 font-medium">Pemasukan</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-extrabold text-white tracking-tight truncate">
+                        {formatRupiah(totalPemasukan)}
+                      </p>
+                    </div>
+                    {saldoBulanSebelumnya > 0 && selectedMonth !== 'all' && (
+                      <span className="text-[9px] sm:text-[10px] text-emerald-200 block font-normal mt-1 leading-tight opacity-90 truncate">
+                        Termasuk saldo lalu ({formatRupiah(saldoBulanSebelumnya)})
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Pengeluaran Sub-Card */}
+                  <div className="bg-white/15 backdrop-blur-md rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/20 transition hover:bg-white/20 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
+                        <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md sm:rounded-lg bg-rose-400/30 flex items-center justify-center text-rose-200 shrink-0">
+                          <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                          </svg>
+                        </div>
+                        <span className="text-[11px] sm:text-xs text-blue-100 font-medium">Pengeluaran</span>
+                      </div>
+                      <p className="text-xs sm:text-base font-extrabold text-white tracking-tight truncate">
+                        {formatRupiah(totalPengeluaran)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ================= 3. FILTER & TOOLBAR BAR ================= */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-subtle transition-colors">
+              
+              {/* Filter Controls (Grid 2 kolom di HP agar presisi dan rapi) */}
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
+                {/* Select Bulan */}
+                <div className="relative">
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="w-full text-xs sm:text-sm font-semibold bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-2.5 sm:px-3 py-2 pr-7 focus:outline-none transition appearance-none cursor-pointer"
+                  >
+                    <option value="all">Semua Bulan</option>
+                    {DAFTAR_BULAN.map((b) => (
+                      <option key={b.value} value={b.value}>
+                        {b.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                    <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Select Tahun */}
+                <div className="relative">
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    className="w-full text-xs sm:text-sm font-semibold bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-2.5 sm:px-3 py-2 pr-7 focus:outline-none transition appearance-none cursor-pointer"
+                  >
+                    {availableYears.map((th) => (
+                      <option key={th} value={th}>
+                        Tahun {th}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                    <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Tombol Total Saldo (Jika memfilter bulan tertentu) */}
+                {selectedMonth !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMonth('all')}
+                    className="col-span-2 sm:col-auto w-full sm:w-auto text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-2 rounded-xl transition cursor-pointer text-center"
+                    title="Tampilkan Total Saldo Keseluruhan"
+                  >
+                    Total Saldo
+                  </button>
+                )}
+              </div>
+
+              {/* Ekspor PDF Button */}
+              <button
+                type="button"
+                onClick={handleBukaPreviewPDF}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold shadow-subtle active:scale-[0.98] transition cursor-pointer"
+                title="Buka Preview & Ekspor Laporan PDF"
+              >
+                <svg className="w-4 h-4 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span>Preview & Ekspor PDF</span>
+              </button>
+
+            </div>
+
+            {/* ================= 4. RIWAYAT TRANSAKSI (CARD LIST ALA DOMPETKU) ================= */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-subtle p-3.5 sm:p-5 transition-colors">
+              
+              <div className="flex items-center justify-between mb-3 px-0.5">
+                <div>
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                    Riwayat Transaksi
+                  </h2>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {transaksiDifilter.length} transaksi pada periode ini
+                  </p>
+                </div>
+              </div>
+
+              {transaksiDifilter.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 text-center bg-slate-50/60 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <div className="w-12 h-12 mb-2.5 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xl">
+                    📁
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-1">Belum Ada Transaksi</h3>
+                  <p className="text-xs text-slate-400 max-w-xs mb-3.5">
+                    Belum ada catatan keuangan kas di periode yang dipilih.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleBukaTambah}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-bold shadow-subtle active:scale-95 transition ${currentAccent.btn}`}
+                  >
+                    + Catat Transaksi Baru
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {/* Banner Saldo Kas Bulan Sebelumnya (Di-block Orange) */}
+                  {saldoBulanSebelumnya > 0 && selectedMonth !== 'all' && (
+                    <div className="w-full bg-orange-50/90 dark:bg-orange-950/40 p-3 sm:p-4 rounded-xl sm:rounded-2xl border-2 border-orange-300 dark:border-orange-600/70 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 text-left">
+                      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 bg-orange-500 text-white font-bold shadow-xs">
+                          <svg className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-orange-200 dark:bg-orange-900/80 text-orange-900 dark:text-orange-200">
+                              Saldo Kas Bulan Lalu
+                            </span>
+                            <span className="text-[10px] sm:text-[11px] text-orange-700 dark:text-orange-300 font-semibold">
+                              {namaBulanSebelumnya}
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm font-bold text-orange-950 dark:text-orange-100 mt-0.5 truncate sm:truncate-none">
+                            Sisa Saldo Kas Bulan Sebelumnya ({namaBulanSebelumnya})
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex sm:block items-center justify-between pt-1 sm:pt-0 border-t sm:border-t-0 border-orange-200/60 dark:border-orange-900/40 text-right sm:shrink-0">
+                        <span className="text-[11px] text-orange-700 dark:text-orange-300 font-medium sm:hidden">Nominal:</span>
+                        <span className="text-xs sm:text-sm font-extrabold text-orange-700 dark:text-orange-400">
+                          + {formatRupiah(saldoBulanSebelumnya)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {[...transaksiDifilter]
+                    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal))
+                    .map((item) => {
+                      const isMasuk = item.jenis === 'pemasukan';
+                      const isAwal = item.isSaldoAwal || (item.keterangan && (item.keterangan.toLowerCase().includes('saldo awal') || item.keterangan.toLowerCase().includes('sisa uang kas')));
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => handleBukaEdit(item)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleBukaEdit(item);
+                            }
+                          }}
+                          className={`w-full bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-xl sm:rounded-2xl border shadow-subtle hover:border-blue-400 dark:hover:border-blue-500/70 hover:shadow-md active:scale-[0.99] active:bg-slate-50 dark:active:bg-slate-800/60 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 text-left group cursor-pointer select-none ${
+                            isAwal
+                              ? 'border-orange-300 dark:border-orange-700/70 bg-orange-50/20 dark:bg-orange-950/20'
+                              : 'border-slate-200/80 dark:border-slate-800/80'
+                          }`}
+                          title="Klik untuk mengedit transaksi ini"
+                        >
+                          {/* Bagian Utama (Atas di HP, Kiri di Desktop) */}
+                          <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">
+                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                              <div
+                                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 ${
+                                  isAwal
+                                    ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-900/60'
+                                    : isMasuk
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50'
+                                    : 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/50'
+                                }`}
+                              >
+                                {isMasuk ? (
+                                  <svg className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                                  </svg>
+                                )}
+                              </div>
+
+                              <div className="min-w-0">
+                                <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug truncate">
+                                  {item.keterangan}
+                                </p>
+                                
+                                {/* Meta tanggal & label untuk tampilan Desktop */}
+                                <div className="hidden sm:flex flex-wrap items-center gap-2 mt-0.5">
+                                  <span className="text-[11px] text-slate-400">
+                                    {formatTanggal(item.tanggal)}
+                                  </span>
+                                  <span
+                                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md uppercase tracking-wider ${
+                                      isMasuk
+                                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
+                                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400'
+                                    }`}
+                                  >
+                                    {item.jenis}
+                                  </span>
+                                  {isAwal && (
+                                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-md uppercase tracking-wider bg-orange-100 dark:bg-orange-900/70 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                                      Saldo Awal
+                                    </span>
+                                  )}
+                                  {item.keteranganTambahan && item.keteranganTambahan !== '-' && (
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md font-medium">
+                                      {item.keteranganTambahan}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Nominal & Chevron pada HP */}
+                            <div className="sm:hidden flex items-center gap-1.5 text-right shrink-0">
+                              <span
+                                className={`text-xs font-extrabold tracking-tight ${
+                                  item.nominal === 0
+                                    ? 'text-slate-600 dark:text-slate-300'
+                                    : isMasuk
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-rose-600 dark:text-rose-400'
+                                }`}
+                              >
+                                {item.nominal === 0 ? formatRupiah(0) : `${isMasuk ? '+' : '-'} ${formatRupiah(item.nominal)}`}
+                              </span>
+                              <svg className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                            </div>
+                          </div>
+
+                          {/* Bagian Bawah Khusus HP (Tanggal, Badge, Keterangan Tambahan) */}
+                          <div className="flex sm:hidden items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                              <span className="text-[10px] text-slate-400">
+                                {formatTanggal(item.tanggal)}
+                              </span>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                                  isMasuk
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
+                                    : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400'
+                                }`}
+                              >
+                                {item.jenis}
+                              </span>
+                              {isAwal && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded uppercase bg-orange-100 dark:bg-orange-900/70 text-orange-800 dark:text-orange-300">
+                                  Saldo Awal
+                                </span>
+                              )}
+                              {item.keteranganTambahan && item.keteranganTambahan !== '-' && (
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded truncate max-w-[170px]">
+                                  {item.keteranganTambahan}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Bagian Kanan Khusus Desktop (Nominal & Chevron) */}
+                          <div className="hidden sm:flex items-center gap-2.5 shrink-0 text-right">
+                            <span
+                              className={`text-sm font-extrabold tracking-tight ${
+                                item.nominal === 0
+                                  ? 'text-slate-600 dark:text-slate-300'
+                                  : isMasuk
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-rose-600 dark:text-rose-400'
+                              }`}
+                            >
+                              {item.nominal === 0 ? formatRupiah(0) : `${isMasuk ? '+' : '-'} ${formatRupiah(item.nominal)}`}
+                            </span>
+                            <div className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all">
+                              <svg className="w-4 h-4 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+
+            </div>
+
+          </main>
+
+          {/* ================= 5. FOOTER ================= */}
+          <footer className="mt-auto py-6 border-t border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-center text-xs text-slate-400 dark:text-slate-500 transition-colors">
+            <p className="font-semibold text-slate-700 dark:text-slate-300">
+              Buku Kas &bull; Kelas 1 Makkah SDIT AL-HAMRA
+            </p>
+          </footer>
+
+          {/* ================= 6. FLOATING ACTION BUTTON (MOBILE) ================= */}
+          <div className="fixed bottom-5 right-5 sm:hidden z-40">
+            <button
+              type="button"
+              onClick={handleBukaTambah}
+              className={`w-12 h-12 rounded-2xl text-white shadow-xl flex items-center justify-center text-xl font-bold active:scale-95 transition cursor-pointer ${currentAccent.btn}`}
+              title="Catat Transaksi"
+            >
+              <svg className="w-6 h-6 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
+
+          {/* ================= 7. MODAL INPUT TRANSAKSI (BOTTOM SHEET DI HP / CENTER DI DESKTOP) ================= */}
+          {isModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-fade-in">
+              <div className="w-full sm:max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-subtle-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-6 max-h-[92vh] overflow-y-auto text-slate-900 dark:text-slate-100 transition-colors pb-7 sm:pb-6">
+                
+                {/* Mobile Drag Indicator */}
+                <div className="w-12 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
+
+                {/* Modal Header */}
+                <div className="flex items-center justify-between mb-3.5 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className="w-9 h-9 rounded-2xl flex items-center justify-center text-white font-bold"
+                      style={{ backgroundColor: currentAccent.color }}
+                    >
+                      {editingItem ? (
+                        <svg className="w-5 h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                        {editingItem ? 'Edit Transaksi Kas' : 'Catat Transaksi Kas'}
+                      </h3>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        {editingItem ? 'Perbarui data transaksi kas yang dipilih' : 'Kelas 1 Makkah SDIT AL-HAMRA'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleTutupModal}
+                    className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-center font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubmitTransaksi} className="space-y-3.5">
+                  
+                  {/* Segmented Switcher Jenis Transaksi */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                      Jenis Transaksi
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setJenis('pemasukan');
+                          if (!editingItem) setNominalDisplay('');
+                        }}
+                        className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                          jenis === 'pemasukan'
+                            ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>↓ Pemasukan</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setJenis('pengeluaran');
+                          if (!editingItem) setNominalDisplay('');
+                        }}
+                        className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                          jenis === 'pengeluaran'
+                            ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>↑ Pengeluaran</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Tanggal */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">
+                        Tanggal
+                      </label>
+                      <input
+                        type="date"
+                        value={tanggal}
+                        onChange={(e) => setTanggal(e.target.value)}
+                        required
+                        className="w-full px-3 py-2 text-base sm:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none text-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+
+                    {/* Nominal */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">
+                        Nominal (Rp)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none font-bold text-sm text-slate-400 dark:text-slate-500">
+                          Rp
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="0"
+                          value={nominalDisplay}
+                          onFocus={() => {
+                            if (nominalDisplay === '0') setNominalDisplay('');
+                          }}
+                          onChange={(e) => {
+                            setNominalDisplay(formatAngkaRibuan(e.target.value));
+                            if (errorMsg) setErrorMsg('');
+                          }}
+                          className="w-full pl-10 pr-3 py-2 text-base sm:text-sm font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Keterangan */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">
+                      Keterangan
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={jenis === 'pemasukan' ? 'Contoh: Iuran kas siswa (Ahmad)' : 'Contoh: Spidol whiteboard & kertas'}
+                      value={keterangan}
+                      onChange={(e) => {
+                        setKeterangan(e.target.value);
+                        if (errorMsg) setErrorMsg('');
+                      }}
+                      required
+                      className="w-full px-3 py-2 text-base sm:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"
+                    />
+                  </div>
+
+                  {/* Keterangan Tambahan (Opsional) */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">
+                      Keterangan Tambahan <span className="text-[10px] font-normal text-slate-400 lowercase">(opsional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Lunas 1 Bulan / Nota #12 / Pembayaran Transfer"
+                      value={keteranganTambahan}
+                      onChange={(e) => setKeteranganTambahan(e.target.value)}
+                      className="w-full px-3 py-2 text-base sm:text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"
+                    />
+                  </div>
+
+                  {errorMsg && (
+                    <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/50 px-3 py-2 rounded-xl">
+                      {errorMsg}
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="pt-1.5 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTutupModal}
+                      className="w-full py-2.5 sm:py-3 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs sm:text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className={`w-full py-2.5 sm:py-3 px-3 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md transition active:scale-95 cursor-pointer ${
+                        jenis === 'pemasukan'
+                          ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                          : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                      }`}
+                    >
+                      {editingItem ? 'Simpan Perubahan' : `Simpan ${jenis === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran'}`}
+                    </button>
+                  </div>
+
+                  {editingItem && (
+                    <div className="pt-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const item = editingItem;
+                          handleTutupModal();
+                          setItemToDelete(item);
+                        }}
+                        className="inline-flex items-center gap-1.5 py-1.5 px-3 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition cursor-pointer"
+                      >
+                        <svg className="w-3.5 h-3.5 stroke-[2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        <span>Hapus Transaksi Ini</span>
+                      </button>
+                    </div>
+                  )}
+
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* ================= 8. MODAL HAPUS TRANSAKSI ================= */}
+          {itemToDelete && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fade-in">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 transition-colors">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-3">
+                  <svg className="w-5 h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">
+                  Hapus Transaksi?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                  Tindakan ini tidak dapat dibatalkan:
+                </p>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3 border border-slate-200 dark:border-slate-700 mb-4 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Keterangan:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[170px]">{itemToDelete.keterangan}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Nominal:</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100">{formatRupiah(itemToDelete.nominal)}</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setItemToDelete(null)}
+                    className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleHapus(itemToDelete.id);
+                      setItemToDelete(null);
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition active:scale-95"
+                  >
+                    Hapus
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= 9. MODAL PREVIEW PDF DENGAN TOMBOL DOWNLOAD & BATAL ================= */}
+          {pdfPreview && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-4xl max-h-[94vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden text-slate-800 dark:text-slate-100 transition-colors">
+                
+                {/* Header Modal Preview */}
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className="w-9 h-9 rounded-2xl flex items-center justify-center text-white font-bold shrink-0"
+                      style={{ backgroundColor: currentAccent.color }}
+                    >
+                      <svg className="w-5 h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">
+                        Preview Laporan Kas PDF
+                      </h3>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                        {pdfPreview.periodeText} &bull; Kelas 1 Makkah SDIT AL-HAMRA
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleTutupPreviewPDF}
+                    className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-center font-bold transition active:scale-95 cursor-pointer ml-2"
+                    title="Tutup Preview"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* PDF Viewer Container */}
+                <div className="flex-1 p-2 sm:p-4 bg-slate-100 dark:bg-slate-950/60 overflow-hidden flex flex-col min-h-0">
+                  <iframe
+                    src={pdfPreview.blobUrl}
+                    className="w-full flex-1 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white shadow-xs min-h-[58vh] sm:min-h-[68vh]"
+                    title="Preview PDF Laporan Kas"
+                  />
+                  <div className="mt-2 text-center text-xs text-slate-400 dark:text-slate-500 sm:hidden">
+                    Jika preview PDF tidak otomatis tampil di peramban ponsel,{' '}
+                    <a
+                      href={pdfPreview.blobUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 dark:text-blue-400 font-semibold underline"
+                    >
+                      Buka di Tab Baru
+                    </a>{' '}
+                    atau unduh langsung dengan tombol di bawah.
+                  </div>
+                </div>
+
+                {/* Footer Modal: Tombol Cancel / Batal & Download */}
+                <div className="flex items-center justify-between sm:justify-end gap-3 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleTutupPreviewPDF}
+                    className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs sm:text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleDownloadPDF();
+                      handleTutupPreviewPDF();
+                    }}
+                    className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-xs sm:text-sm font-bold shadow-md active:scale-95 transition cursor-pointer ${currentAccent.btn}`}
+                  >
+                    <svg className="w-4 h-4 stroke-[2.4]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download PDF</span>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* ================= 10. MODAL PANDUAN INSTAL PWA DI HP ================= */}
+          {showInstallGuide && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 p-5 sm:p-6 max-h-[92vh] overflow-y-auto transition-colors">
+                
+                {/* Modal Header */}
+                <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0"
+                      style={{ backgroundColor: currentAccent.color }}
+                    >
+                      <svg className="w-5 h-5 stroke-[2.2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                        Pasang Aplikasi di HP
+                      </h3>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        Buku Kas - Kelas 1 Makkah SDIT AL-HAMRA
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowInstallGuide(false)}
+                    className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-center font-bold"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                {/* Segmented Switcher Platform */}
+                <div className="grid grid-cols-3 gap-1.5 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setInstallTab('android')}
+                    className={`py-2 px-2 text-xs font-bold rounded-xl transition text-center ${
+                      installTab === 'android'
+                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    🤖 Android
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInstallTab('ios')}
+                    className={`py-2 px-2 text-xs font-bold rounded-xl transition text-center ${
+                      installTab === 'ios'
+                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    🍎 iPhone/iPad
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInstallTab('wifi')}
+                    className={`py-2 px-2 text-xs font-bold rounded-xl transition text-center ${
+                      installTab === 'wifi'
+                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    📡 Buka di HP
+                  </button>
+                </div>
+
+                {/* Tab 1: Android */}
+                {installTab === 'android' && (
+                  <div className="space-y-3.5 text-xs">
+                    {deferredPrompt && (
+                      <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 p-3.5 rounded-2xl flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-blue-900 dark:text-blue-200">
+                            Peramban Mendukung Instal Otomatis!
+                          </p>
+                          <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
+                            Klik tombol di samping untuk langsung memasang ke launcher HP.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              deferredPrompt.prompt();
+                              const res = await deferredPrompt.userChoice;
+                              if (res && res.outcome === 'accepted') {
+                                setDeferredPrompt(null);
+                                setShowInstallGuide(false);
+                              }
+                            } catch (e) {}
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-white font-bold text-xs shadow-md shrink-0 active:scale-95 ${currentAccent.btn}`}
+                        >
+                          Pasang Sekarang
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="space-y-2.5">
+                      <div className="flex items-start gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-xs">
+                          1
+                        </span>
+                        <div>
+                          <p className="font-bold text-slate-800 dark:text-slate-100">Buka di Google Chrome / Edge</p>
+                          <p className="text-slate-500 dark:text-slate-400 text-[11px]">Buka halaman Buku Kas menggunakan browser Chrome pada HP Android Anda.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-xs">
+                          2
+                        </span>
+                        <div>
+                          <p className="font-bold text-slate-800 dark:text-slate-100">Ketuk Menu Titik Tiga (⋮)</p>
+                          <p className="text-slate-500 dark:text-slate-400 text-[11px]">Ketuk ikon tiga titik di pojok kanan atas browser Anda.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-xs">
+                          3
+                        </span>
+                        <div>
+                          <p className="font-bold text-slate-800 dark:text-slate-100">Pilih "Tambahkan ke Layar Utama" / "Instal Aplikasi"</p>
+                          <p className="text-slate-500 dark:text-slate-400 text-[11px]">Pilih opsi tersebut lalu konfirmasi instalasi. Ikon resmi Buku Kas akan muncul di layar utama HP!</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2: iPhone / iPad (iOS Safari) */}
+                {installTab === 'ios' && (
+                  <div className="space-y-2.5 text-xs">
+                    <div className="flex items-start gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                      <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-xs">
+                        1
+                      </span>
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-slate-100">Buka di Peramban Safari</p>
+                        <p className="text-slate-500 dark:text-slate-400 text-[11px]">Pastikan halaman ini dibuka menggunakan browser bawaan Apple Safari di iPhone atau iPad.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                      <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-xs">
+                        2
+                      </span>
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-slate-100">Ketuk Tombol Bagikan (Share)</p>
+                        <p className="text-slate-500 dark:text-slate-400 text-[11px]">Ketuk ikon kotak dengan tanda panah mengarah ke atas di bilah navigasi bawah Safari.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                      <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-xs">
+                        3
+                      </span>
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-slate-100">Pilih "Tambah ke Layar Utama" (Add to Home Screen)</p>
+                        <p className="text-slate-500 dark:text-slate-400 text-[11px]">Gulir menu ke bawah lalu ketuk <strong>Tambah ke Layar Utama</strong>.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                      <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-xs">
+                        4
+                      </span>
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-slate-100">Ketuk "Tambah" di Kanan Atas</p>
+                        <p className="text-slate-500 dark:text-slate-400 text-[11px]">Selesai! Aplikasi Buku Kas kini dapat dibuka langsung dari Home Screen iPhone tanpa bilah Safari.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 3: Buka via Wi-Fi */}
+                {installTab === 'wifi' && (
+                  <div className="space-y-3 text-xs">
+                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Untuk membuka dan menginstal aplikasi ini langsung di HP Anda melalui jaringan Wi-Fi lokal yang sama dengan komputer:
+                    </p>
+
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-3.5 space-y-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        Ketik alamat ini di browser HP Anda:
+                      </p>
+                      <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2">
+                        <code className="font-mono font-bold text-blue-600 dark:text-blue-400 text-xs sm:text-sm">
+                          http://192.168.1.100:3000
+                        </code>
+                        <span className="text-[10px] text-slate-400">atau .101</span>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 p-3 rounded-2xl space-y-1">
+                      <p className="font-bold text-amber-800 dark:text-amber-300">💡 Catatan Koneksi Wi-Fi:</p>
+                      <p>Pastikan ponsel dan komputer Anda terhubung ke jaringan Wi-Fi yang sama (misal: Wi-Fi rumah atau hotspot yang sama).</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Modal Footer */}
+                <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowInstallGuide(false)}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition active:scale-95 cursor-pointer"
+                  >
+                    Tutup Panduan
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((reg) => {
+            console.log('ServiceWorker PWA terdaftar, scope:', reg.scope);
+            reg.update();
+          })
+          .catch((err) => console.warn('Pendaftaran ServiceWorker gagal:', err));
+      });
+    }
+  </script>
+</body>
+</html>
